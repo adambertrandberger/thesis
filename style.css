@@ -1,8 +1,21 @@
+body {
+    background-color: black;
+}
+
 .dot {
     width: 10px;
     height: 10px;
     border-radius: 5px;
-    border: 1px solid black;
-    background-color: red;
+    border: 1px solid white;
     position: absolute;
+    z-index: 0;
+}
+
+#footer {
+    z-index: 1000;
+    position: fixed;
+    background: black;
+    color: white;
+    border: 1px solid white;
+    padding: 20px;
 }

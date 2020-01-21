@@ -6,6 +6,17 @@
         <link rel="stylesheet" type="text/css" href="style.css">
     </head>
     <body>
+        <div id="footer">
+            <div>Buffer size: <span id="bufferSize"></span></div>
+            <div>Resolve Back Pressure?
+                <button id="resolveBackPressure" onclick="toggleBackPressure()">Yes</button>
+            </div>
+            <div>
+                <button onclick="deleteDots();">Delete All Dots</button>
+            </div>
+            
+        </div>
         <script src="main.js"></script>
+        <script src="ui.js"></script>        
     </body>
 </html>

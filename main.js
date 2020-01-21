@@ -1,7 +1,8 @@
-let debug = true;
+let debug = true,
+    enableResolution = true;
 
 class SF { // StreamFunction
-    constructor(f=(x => x), sfs=[]) {
+    constructor(f=(async x => x), sfs=[]) {
         this.f = f;
         this.sfs = sfs; // this is for using combinators over several stream functions at the same time like .all([...]).sum()
     }
@@ -11,7 +12,8 @@ class SF { // StreamFunction
     }
 
     then(sf) {
-        return new SF(x => sf.f(this.f(x)), this.sfs.map(sf1 => sf1.then(sf)));
+        return new SF(async x => await this.f(x).then(async x => await sf.f(x)),
+                      this.sfs.map(sf1 => sf1.then(sf)));
     }
     
     all(sfs) {
@@ -27,30 +29,30 @@ class SF { // StreamFunction
     }
 
     sum() { // assuming this SF has inner sfs and they are numbers
-        return new SF(x => {
+        return new SF(async x => {
             return this.apply(x).reduce((a, b) => a + b);
         });
     }
 
     join() { 
-        return new SF(x => {
+        return new SF(async x => {
             return this.apply(x);
         });
     }
 
-    apply(x) { // forces the SF to give a value for input "x"
+    async apply(x) { // forces the SF to give a value for input "x"
         if (this.sfs.length > 0) {
-            return this.sfs.map(sf => sf.apply(x));            
+            return await Promise.all(this.sfs.map(sf => sf.apply(x)));            
         } else {
-            return this.f(x);
+            return await this.f(x);
         }
     }
 
-    run(producer, interval=100) {
+    run(producer, interval=10) {
         // create a new consumer, that runs the signal function
         const consumer = new Stream({
             consume: async x => {
-                this.apply(x);
+                await this.apply(x);
             }
         });
 
@@ -81,7 +83,9 @@ class Stream {
         this.windowStartingSecond = this.getCurrentSecond(); // this is to track how long ago the window started -- this can probably be removed
         this.consumptionsDuringWindow = 0;
 
-        this.windowSize = 2; // 1 second window for throttling and for computing the average input
+        this.windowSize = 0.7; //  window for throttling and for computing the average input
+
+        this.flushing = false;
     }
 
     getCurrentSecond() {
@@ -92,38 +96,36 @@ class Stream {
         return this.getCurrentSecond() - this.windowStartingSecond < this.windowSize;
     }
 
-    doConsumption(datum) {
-        /*
-          if (this.hasBackPressure()) {
-          console.info('Skipping to prevent back pressure');
-          return;
-          }
-        */
+    async doConsumption(datum) {
+        if (this.hasBackPressure() && enableResolution) {
+            console.info('Skipping to prevent back pressure');
+            return;
+        }
 
         const before = performance.now();
 
-        this.consume(datum).then(() => {
-            if (this.isWithinWindow()) {
-                this.consumptionsDuringWindow += 1;
-            } else { // reset all statistics (so they don't get stale)
-                this.windowStartingSecond = this.getCurrentSecond();
-                this.consumptionsDuringWindow = 1;
-            }
-            
-            this.consumptionCount += 1;
-            this.totalConsumptionDuration += ((performance.now() - before)/1000);
+        await this.consume(datum);
+        
+        if (this.isWithinWindow()) {
+            this.consumptionsDuringWindow += 1;
+        } else { // reset all statistics (so they don't get stale)
+            this.windowStartingSecond = this.getCurrentSecond();
+            this.consumptionsDuringWindow = 1;
+        }
+        
+        this.consumptionCount += 1;
+        this.totalConsumptionDuration += ((performance.now() - before)/1000);
 
-            if (debug) {
-                if (this.hasBackPressure()) {
-                    console.warn('Back pressure detected.\n\n' +
-                                 'Stream is consuming ' + this.averageInputPerWindow() + ' inputs per window, and can only process each sample at ' + this.averageConsumptionDuration() + ' seconds.\n\n');
-                    
-                }
-                // else {
-                //     console.info('Consumption successful (no back pressure). Input per second is ' + this.averageInputPerWindow() + ' and processing each sample at ' + this.averageConsumptionDuration() + ' seconds.');
-                // }
+        if (debug) {
+            if (this.hasBackPressure()) {
+                console.warn('Back pressure detected.\n\n' +
+                             'Stream is consuming ' + this.averageInputPerWindow() + ' inputs per window, and can only process each sample at ' + this.averageConsumptionDuration() + ' seconds.\n\n');
+                
             }
-        });
+            // else {
+            //     console.info('Consumption successful (no back pressure). Input per second is ' + this.averageInputPerWindow() + ' and processing each sample at ' + this.averageConsumptionDuration() + ' seconds.');
+            // }
+        }
 
     }
 
@@ -155,7 +157,7 @@ class Stream {
         while (this.buffer.length > 0) { // empty entire buffer to all streams listening to this stream
             const datum = this.buffer.shift();
             for (const consumer of this.consumers) {
-                consumer.receive(datum);
+                consumer.receive(datum); // don't need to await this because we don't care about a return value
             }
         }
     }
@@ -163,7 +165,7 @@ class Stream {
     // Should be called when the stream receives new data
     // This can happen for both producers and consumers
     // For producers it happens when a new event 
-    receive(datum) {
+    async receive(datum) {
         this.buffer.push(datum);
         this.totalInputs += 1;
         this.flush();
@@ -173,21 +175,28 @@ class Stream {
         this.consumers.push(otherStream);
     }
 
-    flush() { // consume all of the data in the buffer
+    async flush() { // consume all of the data in the buffer
+        if (this.flushing) {
+            return;
+        }
+        
+        this.flushing = true;
 
         // if we were provided a consume function, and there's data,
         while (typeof this.consume === 'function' &&  this.buffer.length > 0) {
+            setBufferSizeDisplay(this.buffer);
             const datum = this.buffer.shift();
-            this.doConsumption(datum);
+            await this.doConsumption(datum);
         }
-
-        console.log(this.buffer);
+        setBufferSizeDisplay(this.buffer);        
         
         // restart the windowStartTime and totalInputs so we do a moving average instead of all time
         if (performance.now() - this.windowStartTime > (this.windowSize*1000)) {
             this.windowStartTime = performance.now();
             this.totalInputs = 0;
         }
+
+        this.flushing = false;
     }
 }
 
@@ -196,17 +205,21 @@ document.addEventListener('mousemove', e => {
     mouseMove.receive(e);
 });
 
-const addThree = new SF(x => x + 3), // Int -> Int
-      addTwo = new SF(x => x + 2),
+const addThree = new SF(async x => x + 3), // Int -> Int
+      addTwo = new SF(async x => x + 2),
       addFive = addThree.then(addTwo),
-      getScreenX = new SF(x => x.screenX),
-      catL = str => new SF(x => str + x),
-      catR = str => new SF(x => x + str),      
-      getAttr = name => new SF(x => x[name]),
+      getScreenX = new SF(async x => x.screenX),
+      catL = str => new SF(async x => str + x),
+      catR = str => new SF(async x => x + str),      
+      getAttr = name => new SF(async x => x[name]),
       getCoords = SF.all([getAttr('clientX'), getAttr('clientY')]).join(),
-      print = new SF(x => console.log(x)),
-      takeALongTime = new SF(x => {
-          for (let i=0; i<100000; ++i) { }
+      print = new SF(async x => console.log(x)),
+      wait = (n=1000) => new SF(async x => {
+          // await 0.1 second
+          await new Promise(resolve => {
+              setTimeout(() => resolve(), n);
+          });
+          
           return x;
       });
 
@@ -216,7 +229,7 @@ const addThree = new SF(x => x + 3), // Int -> Int
 // printX.run(mouseMove);
 // printY.run(mouseMove);
 
-getCoords.then(takeALongTime.repeat(50)).then(new SF(coords => {
+getCoords.then(wait(40)).then(new SF(async coords => {
     const span = document.createElement('span');
     span.className = 'dot';
     span.style.left = coords[0] + 'px';
@@ -225,3 +238,4 @@ getCoords.then(takeALongTime.repeat(50)).then(new SF(coords => {
 })).run(mouseMove);
 
 
+//getCoords.then(print).run(mouseMove);
