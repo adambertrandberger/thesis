@@ -83,7 +83,7 @@ class Stream {
         this.windowStartingSecond = this.getCurrentSecond(); // this is to track how long ago the window started -- this can probably be removed
         this.consumptionsDuringWindow = 0;
 
-        this.windowSize = 0.7; //  window for throttling and for computing the average input
+        this.windowSize = 0.1; //  window for throttling and for computing the average input
 
         this.flushing = false;
     }
@@ -136,9 +136,9 @@ class Stream {
     averageInputPerWindow() { // how much input is this stream pushed per second?
         const now = performance.now();
         const duration = ((now - this.windowStartTime)/1000);
-        if (duration < 0.5) { // if the duration isn't long enough the average is going to be very wrong given 1 input in 0.1 seconds it implies that there are 1/0.01 (100) inputs per second
-            return 0;
-        }
+        // if (duration < 0.5) { // if the duration isn't long enough the average is going to be very wrong given 1 input in 0.1 seconds it implies that there are 1/0.01 (100) inputs per second
+        //     return 0;
+        // }
         return (this.totalInputs / duration)*this.windowSize;
     }
 
