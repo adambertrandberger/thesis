@@ -12,20 +12,22 @@ class Channel {
 
         this.onEmptyBuffer = init.onEmptyBuffer || (() => {});
         this.onFullBuffer = init.onFullBuffer || (() => {});
+        this.onPut = init.onPut || (() => {});        
     }
 
     // adds a value to the channel
     put(value) {
-        if (this.buffer.length > this.bufferThreshold) {
+        if (this.buffer.length >= this.bufferThreshold) {
             this.onFullBuffer(this);
             return;
         }
+        this.onPut(value);
         this.buffer.push(value);
     }
 
     // take -- get a value from the channel
     // should block until a value is there
-    async take(block=True) {
+    async take(block=true) {
         // if the channel is empty, receive will block
         // this isn't a great way of doing it (introduces latency)
         // but it works for a proof of concept
@@ -39,50 +41,77 @@ class Channel {
     }
 }
 
-const ControlMessages = {
-    adjustSampleRate: x => [],
-};
-
 class Signal {
     constructor() {
         this.controlChannel = new Channel();
         this.dataChannel = new Channel({
             onFullBuffer: () => {
-                this.controlChannel.put();
+                //                this.controlChannel.put();
+                console.log('full');
             },
             onEmptyBuffer: () => {
-                this.controlChannel.put();
+                //                this.controlChannel.put();
+                console.log('empty');
+            }
+        });
+    }
+}
+
+class SF {
+    constructor(f=(x => x)) {
+        this.f = f;
+        
+        this.fs = []; // push and pull functions
+    }
+    
+    // pushes data (given by ~getValue~) to the stream ~stream~ every
+    // ~deltaTime~ milliseconds
+    pushTo(sf, deltaTime) {
+        this.fs.push(async signal => {
+            while (true) {
+                await Promise.wait(deltaTime);
+                signal.dataChannel.put(this.f());
+            }
+        });
+    }
+    
+    // pulls data from the stream ~stream~ every ~deltaTime~ milliseconds
+    pullFrom(sf, deltaTime) {
+        this.fs.push(async signal => {
+            while (true) {
+                await Promise.wait();
+
+                // check if there are any control messages (don't block if there aren't any)
+                const controlMessage = await signal.controlChannel.take(false);
+
+                if (controlMessage) {
+                    
+                }
+                
+                signal.dataChannel.put(this.f(await signal.dataChannel.take()));
             }
         });
     }
 
-    // pushes data (given by ~getValue~) to the stream ~stream~ every
-    // ~deltaTime~ milliseconds
-    async pushTo(stream, getValue, deltaTime) {
-        while (true) {
-            await Promise.wait(deltaTime);
-            this.dataChannel.put(getValue());
-        }
-    }
-    
-    // pulls data from the stream ~stream~ every ~deltaTime~ milliseconds
-    async pullFrom(signal, deltaTime) {
-        while (true) {
-            await Promise.wait();
-
-            // check if there are any control messages (don't block if there aren't any)
-            const message = await signal.controlChannel.take(false);
-
-            if (message) {
-                
-            }
-            this.dataChannel.put(await signal.dataChannel.take());
+    run(signal) {
+        for (const f of this.fs) {
+            f(signal);
         }
     }
 }
 
-class SignalFunction {
-    constructor(signal) {
-        this.signal = signal;
+
+class ControlMessage {
+    static DecreaseSampleRate(amount) {
+        return new ControlMessage('SampleRate', -amount);
+    }
+
+    static IncreaseSampleRate(amount) {
+        return new ControlMessage('SampleRate', amount);
+    }
+    
+    constructor(property, amount=0) {
+        this.property = property;
+        this.amount = amount;
     }
 }
