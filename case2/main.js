@@ -1,112 +1,9 @@
-class Channel {
-    constructor(init={}) {
-        this.buffer = [];
-
-        // bufferThreshold -- what value indicates that we are
-        // receiving too much data in the buffer?
-        this.bufferThreshold = init.bufferThreshold || 100;
-
-        // the rate to check if the buffer has been filled
-        // (if ~take~ was called when nothing was in the buffer)
-        this.pollingRate = init.pollingRate || 100;
-
-        this.onEmptyBuffer = init.onEmptyBuffer || (() => {});
-        this.onFullBuffer = init.onFullBuffer || (() => {});
-        this.onPut = init.onPut || (() => {});        
-    }
-
-    // adds a value to the channel
-    put(value) {
-        if (this.buffer.length >= this.bufferThreshold) {
-            this.onFullBuffer(this);
-            return;
-        }
-        this.onPut(value);
-        this.buffer.push(value);
-    }
-
-    // take -- get a value from the channel
-    // should block until a value is there
-    async take(block=true) {
-        // if the channel is empty, receive will block
-        // this isn't a great way of doing it (introduces latency)
-        // but it works for a proof of concept
-        if (block && this.buffer.length === 0) {
-            this.onEmptyBuffer(this);
-            await Promise.wait(this.pollingRate);
-            return await this.take();
-        }
-        
-        return this.buffer.shift();
-    }
-}
-
-class Signal {
-    constructor() {
-        this.controlChannel = new Channel();
-        this.dataChannel = new Channel({
-            onFullBuffer: () => {
-                //                this.controlChannel.put();
-                console.log('full');
-            },
-            onEmptyBuffer: () => {
-                //                this.controlChannel.put();
-                console.log('empty');
-            }
-        });
-    }
-}
-
-class SF {
-    constructor(f=(x => x)) {
-        this.f = f;
-        
-        this.fs = []; // push and pull functions
-    }
-    
-    // pushes data (given by ~getValue~) to the stream ~stream~ every
-    // ~deltaTime~ milliseconds
-    pushTo(sf, deltaTime) {
-        this.fs.push(async signal => {
-            while (true) {
-                await Promise.wait(deltaTime);
-                signal.dataChannel.put(this.f());
-            }
-        });
-    }
-    
-    // pulls data from the stream ~stream~ every ~deltaTime~ milliseconds
-    pullFrom(sf, deltaTime) {
-        this.fs.push(async signal => {
-            while (true) {
-                await Promise.wait();
-
-                // check if there are any control messages (don't block if there aren't any)
-                const controlMessage = await signal.controlChannel.take(false);
-
-                if (controlMessage) {
-                    
-                }
-                
-                signal.dataChannel.put(this.f(await signal.dataChannel.take()));
-            }
-        });
-    }
-
-    run(signal) {
-        for (const f of this.fs) {
-            f(signal);
-        }
-    }
-}
-
-
 class ControlMessage {
-    static DecreaseSampleRate(amount) {
+    static DecreaseDeltaTime(amount) {
         return new ControlMessage('SampleRate', -amount);
     }
 
-    static IncreaseSampleRate(amount) {
+    static IncreaseDeltaTime(amount) {
         return new ControlMessage('SampleRate', amount);
     }
     
@@ -115,3 +12,118 @@ class ControlMessage {
         this.amount = amount;
     }
 }
+
+class Channel {
+    constructor(init={}) {
+        this.dataBuffer = [];
+        this.controlBuffer = [];        
+
+        // bufferThreshold -- what value indicates that we are
+        // receiving too much data in the buffer?
+        this.dataBufferThreshold = init.dataBufferThreshold || 10;
+
+        // the rate to check if the buffer has been filled
+        // (if ~take~ was called when nothing was in the buffer)
+        this.pollingRate = init.pollingRate || 100;
+
+        this.onBufferEmpty = init.onBufferEmpty || (x => x);
+        this.onBufferFull = init.onBufferFull || (x => x);        
+    }
+
+    // adds a value to the channel
+    put(value) {
+        if (this.dataBuffer.length >= this.dataBufferThreshold) {
+            this.onBufferFull(this);            
+        }
+        this.dataBuffer.push(value);
+    }
+
+    // take -- get a value from the channel
+    // should block until a value is there
+    async take(block=true) {
+        // if the channel is empty, receive will block
+        // this isn't a great way of doing it (introduces latency)
+        // but it works for a proof of concept
+
+        if (this.dataBuffer.length === 0) {
+            this.onBufferEmpty(this);
+            
+            if (block) {
+                await Promise.wait(this.pollingRate);
+                return await this.take();
+            } else {
+                return null;
+            }
+        }
+
+        return this.dataBuffer.shift();
+    }
+}
+
+class ManagedChannel {
+    constructor(getSampleRate) {
+        this.percentage = 0.1; // the percent to lower/raise the sampling rate
+        this.dataChannel = new Channel({
+            onBufferEmpty: () => {
+                this.controlChannel.put(ControlMessage.DecreaseDeltaTime(getSampleRate() * this.percentage));
+            },
+            onBufferFull: () => {
+                this.controlChannel.put(ControlMessage.IncreaseDeltaTime(getSampleRate() * this.percentage));
+            }
+        });
+        this.controlChannel = new Channel();
+    }
+
+    put(value) {
+        this.dataChannel.put(value);
+    }
+
+    async take(block=true) {
+        return await this.dataChannel.take();
+    }
+}
+
+class Process {
+    constructor(f) {
+        this.f = f;
+    }
+
+    run() {
+        this.f(...arguments);
+    }
+}
+
+class Sampler {
+    static New(deltaTime=100, f) {
+        const sampler = new Sampler(deltaTime, f);
+        sampler.managedChannel = new ManagedChannel(() => sampler.deltaTime);
+        return [sampler, sampler.managedChannel];
+    }
+    
+    constructor(deltaTime=100, f) { // should be private
+        this.deltaTime = deltaTime;
+        this.f = f;
+    }
+
+    async resolveMessages() {
+        let message = await this.managedChannel.controlChannel.take();
+        while (message) {
+            // for now, always accept requests to alter the sample rate
+            if (message.property === 'SampleRate') {
+                this.deltaTime += message.amount;
+                console.log('Modified the sample rate by ' + message.amount.toFixed(5) + '. New sample rate is ' + this.deltaTime);
+            }
+            
+            message = await this.managedChannel.controlChannel.take();
+        }
+    }
+
+    async run() {
+        while (true) {
+            await this.f(this.managedChannel);
+            this.resolveMessages();
+            await Promise.wait(this.deltaTime);
+        }
+    }
+}
+
