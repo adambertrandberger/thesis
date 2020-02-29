@@ -1,5 +1,6 @@
 body {
     background-color: black;
+    font-family: arial;
 }
 
 .dot {
@@ -18,4 +19,15 @@ body {
     color: white;
     border: 1px solid white;
     padding: 20px;
+}
+
+.block {
+    padding: 10px;
+    margin: 10px;
+    border: 1px white solid;
+    color: white;
+}
+
+.block .title {
+    text-align: center;
 }

@@ -6,7 +6,9 @@ const dataStore = [];
 const databaseProcess = async channel => {
     while (true) {
         const value = await channel.take();
-        await Promise.wait(200); // it takes 100ms over the network to send to the database
+        const latency = 10;
+        window.databaseLatency.textContent = latency;
+        await Promise.wait(latency); // it takes 100ms over the network to send to the database
         console.log('Database: Received signal value=' + value);
         dataStore.push(value);
     }
@@ -17,6 +19,9 @@ const [device1, managedChannel] = Sampler.New(100, async () => {
     const data = new Date().getTime(); // pretend we are sending some signal value
     console.log('Device: Sent new signal value=' + data);
     managedChannel.put(data);
+    
+    window.deviceSampleRate.textContent = device1.deltaTime;
+    window.deviceBuffer.textContent = device1.managedChannel.dataChannel.dataBuffer.length;
 });
 
 // start sending sampels to the managed channel:

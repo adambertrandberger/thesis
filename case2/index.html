@@ -6,6 +6,23 @@
         <link rel="stylesheet" type="text/css" href="style.css">
     </head>
     <body>
+        <div class="block">
+            <div class="title">Database</div>            
+            <div>
+                Latency: <span id="databaseLatency"></span>
+            </div>
+        </div>
+
+        <div class="block">
+            <div class="title">Device</div>
+            <div>
+                Items in Buffer: <span id="deviceBuffer"></span>
+            </div>
+            <div>
+                Delta Time: <span id="deviceSampleRate"></span>
+            </div>
+        </div>
+        
         <script src="util.js"></script>                
         <script src="lib.js"></script>
         <script src="main.js"></script>        
