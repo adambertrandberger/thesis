@@ -10,10 +10,10 @@ class Propagator {
         return stream;
     }
 
-    goto(name) {
+    switchTo(name) {
         return {
             name: name,
-            type: 'goto'
+            type: 'switch'
         };
     }
 
@@ -31,9 +31,9 @@ class Propagator {
               newValue = stream.update(value);
 
         // if we are switching
-        // this kind of switching replaces the current node with the 'goto' node
-        // it is different than a true 'goto' because you lose all variables on the stack
-        if (typeof newValue === 'object' &&  newValue.type === 'goto')  {
+        // this kind of switching replaces the current node with the 'switchTo' node
+        // it is different than a goto because you lose all variables on the stack
+        if (typeof newValue === 'object' &&  newValue.type === 'switch')  {
             this.request(newValue.name, value);
         }
         

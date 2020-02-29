@@ -4,9 +4,9 @@ const p = new Propagator({
     subThree: [x => x - 3, ['checkError']],
     checkError: [x => {
         if (x < 0) {
-            return p.goto('error', x);
+            return p.switchTo('error');
         }
-        return p.goto('print', x);
+        return p.switchTo('print');
     }],
     print: [x => console.log(x)],
     error: [x => console.error(x)]
