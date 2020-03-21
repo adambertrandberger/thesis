@@ -16,6 +16,10 @@ class Stream {
         this.flushing = false;
     }
 
+    getThroughput() {
+        return this.buffer.getThroughput();
+    }
+
     to(stream) {
         this.sinks.push(stream);
         stream.sources.push(this);

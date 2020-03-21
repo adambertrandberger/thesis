@@ -6,8 +6,20 @@
     </head>
     <body>
         <div>
+            <h2>Processing Buffer</h2>
+            <div><span id="processing">[]</span></div>
+            <p>Signal values that are waiting to be processed</p>
+            <p><i>Takes 500ms to process each item</i></p>
+
             <h2>Database</h2>
             <div><span id="database">[]</span></div>
+            <p>Values that are sitting in the database waiting to be visualized</p>
+            <p><i>Takes 500ms to store each item</i></p>
+
+            <h2>Visualization</h2>
+            <div><span id="visualization">[]</span></div>
+            <p>The visualization shows the last 2 seconds worth of processed values</p>
+            <p>If you see "null" in the values here, it means the visualization pulled data too early from the database (it had no data in it)</p>
 
             <h2>Metrics</h2>
             <h3>Throughputs</h3>
@@ -19,14 +31,10 @@
             <p>This does not take into account latency whatsoever. You'll notice the delay between when items show in the database and visualization that is not accounted for in this metric.</p>
             <h3>Sample Rates</h3>
             <div><label>deviceDriver: </label><span id="device-driver-rate"></span>ms</div>
+            <button onclick="rampUp(deviceDriver)">Ramp up by 100ms</button> <button onclick="rampDown(deviceDriver)">Ramp down by 100ms</button>
             <div><label>visualizationDriver: </label><span id="visualization-driver-rate"></span>ms</div>
-            <p>(Sample rates are in delay time)</p>
-            
-            <h2>Visualization</h2>
-            <div><span id="visualization">[]</span></div>
-            <br>
-            <p>The visualization shows the last 2 seconds worth of processed values</p>
-            <p>If you see "null" in the values here, it means the visualization pulled data too early from the database (it had no data in it)</p>
+            <button onclick="rampUp(visualizeDriver)">Ramp up by 100ms</button> <button onclick="rampDown(visualizeDriver)">Ramp down by 100ms</button>
+            <p><i>(Sample rates are in delay between samples -- not samples per second)</i></p>
 
         </div>
 
