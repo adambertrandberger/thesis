@@ -5,6 +5,31 @@
         <title></title>
     </head>
     <body>
+        <div>
+            <h2>Database</h2>
+            <div><span id="database">[]</span></div>
+
+            <h2>Metrics</h2>
+            <h3>Throughputs</h3>
+            <div><label>rand:</label> <span id="rand-throughput"></span></div>
+            <div><label>process:</label> <span id="process-throughput"></span></div>
+            <div><label>store:</label> <span id="store-throughput"></span></div>
+            <div><label>visualize:</label> <span id="visualize-throughput"></span></div>
+            <p>Throughput is how many items pass through the nodes per TimeWindow duration (in this case 1 second).</p>
+            <p>This does not take into account latency whatsoever. You'll notice the delay between when items show in the database and visualization that is not accounted for in this metric.</p>
+            <h3>Sample Rates</h3>
+            <div><label>deviceDriver: </label><span id="device-driver-rate"></span>ms</div>
+            <div><label>visualizationDriver: </label><span id="visualization-driver-rate"></span>ms</div>
+            <p>(Sample rates are in delay time)</p>
+            
+            <h2>Visualization</h2>
+            <div><span id="visualization">[]</span></div>
+            <br>
+            <p>The visualization shows the last 2 seconds worth of processed values</p>
+            <p>If you see "null" in the values here, it means the visualization pulled data too early from the database (it had no data in it)</p>
+
+        </div>
+
         <script src="lib.js"></script>
         <script src="main.js"></script>
     </body>

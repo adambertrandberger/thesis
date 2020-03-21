@@ -3,7 +3,7 @@ class Stream {
         this.update = update;
         
         // buffer for storing all incoming (unprocessed) data
-        this.buffer = new Buffer();
+        this.buffer = new Buffer(1000);
         
         this.sources = [];
         this.sinks = [];
@@ -23,8 +23,7 @@ class Stream {
 
     push(value) {
         if (this.debug) {
-            console.log('Latency: ', this.buffer.averageLatency());
-            console.log('Throughput (samples per second): ', this.buffer.averageThroughputPerSecond());            
+            //            console.log('Throughput (samples per second): ', this.buffer.averageThroughputPerSecond());            
             console.log('Buffer: ', this.buffer.buffer);
         }
         this.buffer.que(value);
@@ -57,47 +56,62 @@ class Stream {
         this.flushing = false;
     }
 
-    static loop() {
+    static loop(delay=1000) {
         const stream = new Stream(),
               intervals = new Set();
-        const looper = async (delay=1000) => {
-            console.log(delay);
-            Array.from(intervals).map(clearInterval);
-            intervals.add(setInterval(() => {
+        const looper = async () => {
+            setTimeout(() => {
                 stream.propagate(null);
-            }, delay));
+                looper();
+            }, stream.delay);
             return null;
         };
         stream.update = looper;
+        stream.delay = delay;
         return stream;
+    }
+}
+
+// A value that resets 
+class TimeWindow {
+    constructor(duration) {
+        this.duration = duration;
+        this.values = [];
+    }
+
+    add(value, time=new Date()) {
+        this.value = value;
+        this.values.push({ value, time });
+        this.updateValues();
+    }
+
+    updateValues() {
+        this.values = this.values.filter(x => new Date() - x.time < this.duration);
+    }
+
+    getValueCount() {
+        return this.getValues().length;
+    }
+
+    getValues() {
+        this.updateValues();
+        return this.values.map(x => x.value);
     }
 }
 
 // a buffer that keeps statistics on items that go in and out
 class Buffer {
-    constructor() {
+    constructor(windowDuration) {
         this.buffer = [];
 
         // how many items have passed thru the buffer
-        this.totalItems = 0;
-
-        // how long we have taken between queing and dequeing
-        this.totalDuration = 0;
+        this.window = new TimeWindow(windowDuration);
 
         this.startTime = new Date();
     }
 
-    averageLatency() {
-        if (this.totalItems > 0 && this.totalDuration > 0) {
-            // how much time per item
-            return this.totalDuration / this.totalItems;
-        } else {
-            return 0;
-        }
-    }
-
-    averageThroughputPerSecond() {
-        return this.totalItems/((new Date() - this.startTime)/1000);
+    getThroughput() {
+        return this.window.getValueCount();
     }
 
     que(value) {
@@ -106,8 +120,7 @@ class Buffer {
 
     deque() {
         const { value, time } = this.buffer.shift();
-        this.totalDuration += (new Date() - time);
-        this.totalItems += 1;
+        this.window.add(value);
         return value;
     }
 

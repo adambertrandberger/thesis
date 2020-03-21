@@ -1,32 +1,66 @@
-// A program that samples some signal 2 times per second
-// and sends it to some "database".
-// The database has a 1 second latency for every request
-// This results in 1 sample of back pressure per second
-const sample = Stream.loop(),
-      rand = new Stream(() => Math.random()),
+const database = [],
+      visualization = new TimeWindow(2000),
+      deviceDriver = Stream.loop(1000),
+      rand = new Stream(async () => {
+          return Math.random();
+      }), // fake signal data
+      process = new Stream(async x => {
+          // a fake KPI calculation that waits 500ms and negates the argument
+          await wait(500);
+          return -x;
+      }, false),
       store = new Stream(async x => {
-          await wait(1000);
-          console.log('Sent to the database: ', x);
-      }, true);
+          // fake database storage which always takes 500ms
+          await wait(500);
+          database.push(x);
+          updateDOMList('database', database);
+      }, false),
+      visualizeDriver = Stream.loop(100),
+      visualize = new Stream(async () => {
+          let val = database.shift();
+          visualization.add(val);
+          updateDOMList('visualization', visualization.getValues());
+      });
 
-sample.to(rand);
-rand.to(store);
-// this is how you start a Stream.loop loop:
-sample.run(100); 
+// setup data collection and analysis graph:
+deviceDriver.to(rand);
+rand.to(process);
+process.to(store);
+// start the loop with 100ms delay
+deviceDriver.run();
+
+// setup data visualization 
+visualizeDriver.to(visualize);
+// start the loop with 100ms delay
+visualizeDriver.run();
 
 // The meta-program that alters the DFG while it is running the program above
-const loop = Stream.loop(),
+const loop = Stream.loop(1000),
       updateDFG = new Stream(() => {
-          controller.breadthFirst(stream => {
-              const latency = stream.buffer.averageLatency();
-              if (latency > 1000) {
-                  // latency is too high, must lower sample rate
-                  sample.run(500); // "sample" takes the sampleRate
-                  console.log('Decreased sample rate to 500');
-              }
-          });
+          updateDOM();
+          if (visualize.buffer.getThroughput() > store.buffer.getThroughput()) {
+              visualizeDriver.delay = visualizeDriver.delay + 100;
+              console.log('Increased delay of visualization to ' + visualizeDriver.delay);
+          } else if (visualize.buffer.getThroughput() < store.buffer.getThroughput()) {
+              visualizeDriver.delay = visualizeDriver.delay - 100;
+              console.log('Decreased delay of visualization to ' + visualizeDriver.delay);
+          }
       }),
-      controller = new Controller(sample);
+      controller = new Controller(deviceDriver);
 
 loop.to(updateDFG);
-loop.run(1000);
+loop.run();
+
+function updateDOMList(name, list) {
+    window[name].textContent = '[' + list.map(x => x === null || x === undefined ? 'null' : x.toFixed(3)) + ']';     
+}
+
+function updateDOM() {
+    window['rand-throughput'].textContent = rand.buffer.getThroughput();
+    window['process-throughput'].textContent = process.buffer.getThroughput();
+    window['store-throughput'].textContent = store.buffer.getThroughput();
+    window['visualize-throughput'].textContent = visualize.buffer.getThroughput();
+    
+    window['visualization-driver-rate'].textContent = visualizeDriver.delay;
+    window['device-driver-rate'].textContent = deviceDriver.delay;
+}
